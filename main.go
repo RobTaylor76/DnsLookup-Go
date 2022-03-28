@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/binary"
+	"flag"
 	"fmt"
 	"math/rand"
 	"net"
@@ -9,9 +10,17 @@ import (
 	"time"
 )
 
+var nameToLookup = flag.String("domainName", "www.google.com", "specify the name fof the host to lookup")
+var dnsServer = flag.String("dnsIP", "192.168.1.1", "specify the IP of DNS Server")
+
 func main() {
-	contactDNS("www.bbc.co.uk")
-	contactDNS("www.google.com")
+	flag.Parse()
+	dnsResponse := contactDNS(*nameToLookup, *dnsServer)
+
+	for _, dnsAnswer := range dnsResponse.Answers {
+		fmt.Printf("%s %s %d %d", dnsAnswer.DomainName, dnsAnswer.Answer, dnsAnswer.AnswerType, dnsAnswer.AnswerClass)
+		fmt.Println()
+	}
 
 }
 
@@ -50,7 +59,7 @@ func headerToBuffer(header dnsHeader) [512]byte {
 	return out
 }
 
-func contactDNS(query string) {
+func contactDNS(query string, dnsServerIP string) DNSResponse {
 
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
@@ -95,7 +104,7 @@ func contactDNS(query string) {
 
 	response := make([]byte, 512)
 
-	client, err := net.Dial("udp", "192.168.1.1:53")
+	client, err := net.Dial("udp", dnsServerIP + ":53")
 	if err != nil {
 		fmt.Errorf(err.Error())
 	}
@@ -111,12 +120,7 @@ func contactDNS(query string) {
 	//	return
 	//}
 
-	dnsResponse := processDNSResponse(response)
-
-	for _, dnsAnswer := range dnsResponse.Answers {
-		fmt.Printf("%s %s", dnsAnswer.DomainName, dnsAnswer.Answer)
-		fmt.Println()
-	}
+	return processDNSResponse(response)
 
 }
 
