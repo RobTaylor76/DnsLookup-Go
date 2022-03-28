@@ -9,13 +9,32 @@ import (
 	"strings"
 	"time"
 )
-
+type RRType uint16
+const (
+	A RRType = 1
+	NS = 2
+	CNAME =5
+	SOA = 6
+	PTR = 12
+	MX = 15
+	TXT = 16
+)
 var nameToLookup = flag.String("domainName", "www.google.com", "specify the name fof the host to lookup")
 var dnsServer = flag.String("dnsIP", "192.168.1.1", "specify the IP of DNS Server")
+var lookupRecordType  = flag.String("recordType", "A", "specify the type of record to lookup A, MX, TXT")
 
 func main() {
 	flag.Parse()
-	dnsResponse, err := contactDNS(*nameToLookup, *dnsServer)
+
+	var lookupType = A
+	switch *lookupRecordType {
+	case "A":  lookupType = A
+	case "MX": lookupType = MX
+	case "TXT": lookupType = TXT
+	default: lookupType = A
+	}
+
+	dnsResponse, err := contactDNS(*nameToLookup, *dnsServer, lookupType)
 
 	if err != nil {
 		fmt.Errorf(err.Error())
@@ -23,7 +42,7 @@ func main() {
 	}
 
 	for _, dnsAnswer := range dnsResponse.Answers {
-		fmt.Printf("%s %s %d %d", dnsAnswer.DomainName, dnsAnswer.Answer, dnsAnswer.AnswerType, dnsAnswer.AnswerClass)
+		fmt.Printf("%s %s %d %d %d", dnsAnswer.DomainName, dnsAnswer.Answer, dnsAnswer.AnswerType, dnsAnswer.AnswerClass, dnsAnswer.Preference)
 		fmt.Println()
 	}
 
@@ -64,7 +83,7 @@ func headerToBuffer(header dnsHeader) [512]byte {
 	return out
 }
 
-func contactDNS(query string, dnsServerIP string) (DNSResponse, error) {
+func contactDNS(query string, dnsServerIP string, lookupType RRType) (DNSResponse, error) {
 
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
@@ -94,7 +113,7 @@ func contactDNS(query string, dnsServerIP string) (DNSResponse, error) {
 
 	buffer[bufferOffset] = byte(0)
 	bufferOffset++
-	binary.BigEndian.PutUint16(buffer[bufferOffset:bufferOffset+2], 1)
+	binary.BigEndian.PutUint16(buffer[bufferOffset:bufferOffset+2], uint16(lookupType))
 	bufferOffset += 2
 	binary.BigEndian.PutUint16(buffer[bufferOffset:bufferOffset+2], 1)
 	bufferOffset += 2
@@ -118,7 +137,7 @@ func contactDNS(query string, dnsServerIP string) (DNSResponse, error) {
 
 	client.Read(response)
 
-	//err = ioutil.WriteFile("./testdata/bbc_response.bin", response[:], 0644)
+	//err = ioutil.WriteFile("./testdata/mx_response.bin", response[:], 0644)
 	//if err != nil {
 	//	return DNSResponse{}, err
 	//}
@@ -137,7 +156,7 @@ func processDNSResponse(buffer []byte) DNSResponse {
 	for question := uint16(1); question <= header2.questionCount; question++ {
 		domainName, offsetBy := ExtractDomainName(questionsBuffer[offset:], buffer)
 		offset += offsetBy
-		questionType := binary.BigEndian.Uint16(questionsBuffer[offset : offset+2])
+		questionType := RRType(binary.BigEndian.Uint16(questionsBuffer[offset : offset+2]))
 		offset += 2
 		questionClass := binary.BigEndian.Uint16(questionsBuffer[offset : offset+2])
 		offset += 2
@@ -171,7 +190,7 @@ func processDNSResponse(buffer []byte) DNSResponse {
 			answersOffset += offsetBy
 		}
 
-		answerType := binary.BigEndian.Uint16(answersBuffer[answersOffset : answersOffset+2])
+		answerType := RRType(binary.BigEndian.Uint16(answersBuffer[answersOffset : answersOffset+2]))
 		answersOffset += 2
 		answerClass := binary.BigEndian.Uint16(answersBuffer[answersOffset : answersOffset+2])
 		answersOffset += 2
@@ -182,12 +201,17 @@ func processDNSResponse(buffer []byte) DNSResponse {
 		answersOffset += 2
 
 		var rdData string
-		if answerType == 1 {
+		var preference uint16
+
+		if answerType == A {
 			rdData = fmt.Sprintf("%d.%d.%d.%d",
 				answersBuffer[answersOffset],
 				answersBuffer[answersOffset+1],
 				answersBuffer[answersOffset+2],
 				answersBuffer[answersOffset+3])
+		} else if answerType == MX {
+			preference = binary.BigEndian.Uint16(answersBuffer[answersOffset : answersOffset+2])
+			rdData, _ = ExtractDomainName(answersBuffer[answersOffset+2:], buffer)
 		} else {
 			rdData, _ = ExtractDomainName(answersBuffer[answersOffset:], buffer)
 		}
@@ -200,6 +224,7 @@ func processDNSResponse(buffer []byte) DNSResponse {
 				AnswerType:  answerType,
 				TTL:         ttl,
 				Answer:      rdData,
+				Preference: preference,
 			})
 
 	}
@@ -243,14 +268,15 @@ type DNSResponse struct {
 
 type Question struct {
 	DomainName    string
-	QuestionType  uint16
+	QuestionType  RRType
 	QuestionClass uint16
 }
 
 type Answer struct {
 	DomainName  string
-	AnswerType  uint16
+	AnswerType  RRType
 	AnswerClass uint16
 	TTL         uint32
 	Answer      string
+	Preference uint16
 }
