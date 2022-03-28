@@ -15,7 +15,12 @@ var dnsServer = flag.String("dnsIP", "192.168.1.1", "specify the IP of DNS Serve
 
 func main() {
 	flag.Parse()
-	dnsResponse := contactDNS(*nameToLookup, *dnsServer)
+	dnsResponse, err := contactDNS(*nameToLookup, *dnsServer)
+
+	if err != nil {
+		fmt.Errorf(err.Error())
+		return
+	}
 
 	for _, dnsAnswer := range dnsResponse.Answers {
 		fmt.Printf("%s %s %d %d", dnsAnswer.DomainName, dnsAnswer.Answer, dnsAnswer.AnswerType, dnsAnswer.AnswerClass)
@@ -59,7 +64,7 @@ func headerToBuffer(header dnsHeader) [512]byte {
 	return out
 }
 
-func contactDNS(query string, dnsServerIP string) DNSResponse {
+func contactDNS(query string, dnsServerIP string) (DNSResponse, error) {
 
 	s1 := rand.NewSource(time.Now().UnixNano())
 	r1 := rand.New(s1)
@@ -98,8 +103,7 @@ func contactDNS(query string, dnsServerIP string) DNSResponse {
 
 	//err := ioutil.WriteFile("./testdata/sample_request.bin", buffer[:], 0644)
 	//if err != nil {
-	//	fmt.Errorf(err.Error())
-	//	return
+	//	return DNSResponse{}, err
 	//}
 
 	response := make([]byte, 512)
@@ -114,13 +118,12 @@ func contactDNS(query string, dnsServerIP string) DNSResponse {
 
 	client.Read(response)
 
-	//err = ioutil.WriteFile("./testdata/sample_response.bin", response[:], 0644)
-	//if err != nil {google.com
-	//	fmt.Errorf(err.Error())
-	//	return
+	//err = ioutil.WriteFile("./testdata/bbc_response.bin", response[:], 0644)
+	//if err != nil {
+	//	return DNSResponse{}, err
 	//}
 
-	return processDNSResponse(response)
+	return processDNSResponse(response), nil
 
 }
 
